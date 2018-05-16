@@ -1,0 +1,103 @@
+-- 2.1
+docker help
+
+docker help cp
+
+-- 2.2.1
+- Create a new container in detached mode from latest NGINX image
+docker run --detach --name web nginx:latest
+
+- The -d flag is shorthand for --detach
+docker run -d --name mailer dockerinaction/ch2_mailer
+
+-- 2.2.2
+- Create an interactive container
+docker run --interactive --tty --link web:web --name web_test busybox:latest /bin/sh
+
+- Verify container
+wget -O - http://web:80
+
+- Interactive container linking web and mailed containers with shorthand flags
+docker run -it --name agent --link web:insideweb --link mailer:dockerinaction/ch2_mailer dockerinaction/ch2_agent
+
+-- 2.2.3 Restarting containers
+docker restart web
+
+- Getting a list of running containers
+docker ps
+
+- Getting logs for a container
+docker logs web
+
+- Stopping containers
+docker stop web
+
+-- 2.3 PID Namespaces
+docker run -d --name namespaceA busybox:latest /bin/sh -c "sleep 30000"
+docker run -d --name namespaceB busybox:latest /bin/sh -c "nc -l -p 0.0.0.0:80"
+
+- Grab running processes within a container
+docker exec namspaceA ps
+
+- Create a container without it's own PID namespace
+docker run --pid host busybox:latest ps
+
+- Create two NGIX process within the same container
+docker run -d --name webConflict nginx:latest
+
+docker exec webConflict nginx -g 'daemon off;'
+
+- Create two NGINX processes within different containers
+docker run -d --name webA nginx:latest
+
+docker run -d --name webB nginx:latest
+
+-- 2.4.1 Flexible Container Identification
+- Create two containers with the same name
+docker run -d --name webid nginx
+
+- Rename container and try again
+docker rename webid webid-old
+
+- Containers can be found using their unqiue ID assigned by Docker, e.g. 40c2ef96946dc21bb86bd39912f182563d65a04dd02f6e686db56eb866123630
+docker exec 40c2ef96946dc21bb86bd39912f182563d65a04dd02f6e686db56eb866123630 ps
+
+- or a shortened version (first 12 characters)
+docker stop 40c2ef96946d
+
+- Use docker create to create a container without starting it (docker run creates and starts a container)
+docker create nginx
+
+- You can capture the container ID in the shell
+CID=$(docker create nginx:latest)
+echo $CID
+
+- ...or in a file
+docker create --cidfile /tmp/web.cid nginx
+
+- ...or via docker ps
+CID=$(docker ps --latest --quiet)
+echo $CID
+
+- ...with shortended flag
+CID=$(docker ps -l -q)
+echo $CID
+
+-- 2.4.2 Container State and Dependencies
+- Script using docker run/create
+MAILER_CID=$(docker run -d dockerinaction/ch2_mailer)
+WEB_CID=$(docker create nginx)
+
+AGENT_CID=$(docker create --link $WEB_CID:insideweb --link $MAILER_CID:insidemailer dockerinaction/ch2_agent)
+
+- To see all containers
+docker ps -a
+
+- Starting containers
+docker start $AGENT_CID
+
+- Script using docker run
+MAILER_CID=$(docker run -d dockerinaction/ch2_mailer)
+WEB_CID=$(docker run -d nginx)
+
+AGENT_CID=$(docker run -d --link $WEB_CID:insideweb --link $MAILER_CID:insidemailer dockerinaction/ch2_agent)
