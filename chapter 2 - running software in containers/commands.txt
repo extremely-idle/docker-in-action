@@ -101,3 +101,98 @@ MAILER_CID=$(docker run -d dockerinaction/ch2_mailer)
 WEB_CID=$(docker run -d nginx)
 
 AGENT_CID=$(docker run -d --link $WEB_CID:insideweb --link $MAILER_CID:insidemailer dockerinaction/ch2_agent)
+
+-- 2.5 Building Environment-Agnostic Systems
+- Create and run a wordpress container
+docker run -d --name wp --read-only wordpress:4
+
+docker inspect --format "{{.State.Running}}" wp
+
+docker logs wp
+
+- Wordpress has a dependency on MySQL, so run up a container for that too
+docker run -d --name wpdb -e MYSQL_ROOT_PASSWORD=ch2demo mysql:5
+
+- Create a different Wordpress container that uses the MySQL container
+docker run -d --name wp2 --link wpdb:mysql -p 80 --read-only wordpress:4
+
+- Start container with specific volumes for read only exceptions
+docker run -d --name wp3 --link wpdb:mysql -p 80 -v /run/lock/apache2/ -v /run/apache2/ --read-only wordpress:4
+
+SQL_CID=$(docker create -e MYSQL_ROOT_PASSWORD=ch2demo mysql:5)
+
+docker start $SQL_CID
+MAILER_CID=$(docker create dockerinaction/ch2_mailer)
+docker start $MAILER_CID
+
+WP_CID=$(docker create --link $SQL_CID:mysql -p 80 -v /run/lock/apache2/ -v /run/apache2/ --read-only wordpress:4)
+docker start $WP_CID
+
+AGENT_CID=$(docker create --link $WP_CID:insideweb --link $MAILER_CID:insidemailer dockerinaction/ch2_agent)
+docker start $AGENT_CID
+
+- 2.5.2 Environment Variable Injection
+- Example of injecting an environment variable into a container
+docker run --env MY_ENVIRONMENT_VAR="this is a test" busybox:latest env
+
+docker create --env WORDPRESS_DB_HOST=<dbhost_name>
+              --env WORDPRESS_DB_USER=site_admin
+              --env WORDPRESS_DB_PASSWORD=MeowMix42
+              wordpress:4
+
+-Updated provisioning Script
+DB_CID=$(docker run -d -e MYSQL_ROOT_PASSWORD=ch2demo mysql:5)
+
+MAILER_CID=$(docker run -d dockerinaction/ch2_mailer)
+
+if [ ! -n "$CLIENT_ID" ]; then
+  echo "Client ID is not set"
+  exit 1
+fi
+
+WP_CID=$(docker create --link $DB_CID:mysql
+                       --name wp_$CLIENT_ID
+                       -p 80
+                       -v /run/lock/apache2/
+                       -v /run/apache2/
+                       -e WORDPRESS_DB_NAME=$CLIENT_ID
+                       --read-only wordpress:4)
+docker start $WP_CID
+
+AGENT_CID=$(docker create --name agent_$CLIENT_ID
+                          --link $WP_CID:insideweb
+                          --link $MAILER_CID:insidemailer
+                          dockerinaction/ch2_agent)
+docker start $AGENT_CID
+
+-- 2.6 Building Durable Containers
+- 2.6.1 Container that always restarts...
+docker run -d --name backoff-detector --restart always busybox date
+
+docker logs -f backoff-detector
+
+docker exec backoff-detector echo Just a Test
+
+-2.6.2 Keeping containers running
+docker run -d -p 80:80 --name lamp-test tutum/lamp
+
+docker top lamp-test
+
+docker exec lamp-test ps
+
+docker exec lamp-test kill <PID>
+
+docker run workpress:4 cat /entrypoint.sh
+
+docker run --entrypoint="cat" wordpress:4 /entrypoint.sh
+
+- 2.7 Cleaning up
+docker rm <container-name>
+
+- Automatically cleaning up containers when they enter the "Exit" state
+docker run --rm
+           --name auto-exit-test
+           busybox:latest
+           echo Hello World
+
+docker rm -vf $(docker ps -a -q)
